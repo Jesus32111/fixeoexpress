@@ -2,8 +2,96 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import Machinery from '../models/Machinery.js';
 import { protect } from '../middleware/auth.js';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 const router = express.Router();
+
+// Ensure uploads directory exists
+const uploadDir = path.join(path.resolve(), 'uploads/machinery_documents');
+if (!fs.existsSync(uploadDir)){
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Multer configuration
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  // Accept common document and image types
+  const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
+  const mimetype = allowedTypes.test(file.mimetype);
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+
+  if (mimetype && extname) {
+    return cb(null, true);
+  }
+  cb(new Error('Error: File type not supported! Only JPEG, PNG, PDF, DOC, DOCX are allowed.'));
+};
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 1024 * 1024 * 10 }, // 10MB limit per file
+  fileFilter: fileFilter
+});
+
+const machineryUploadFields = [
+  { name: 'soat', maxCount: 1 },
+  { name: 'technicalReview', maxCount: 1 },
+  { name: 'propertyCard', maxCount: 1 },
+  { name: 'others', maxCount: 5 } // Allow up to 5 'other' documents
+];
+
+// Helper function to build documents object from req.files
+const buildDocumentsObject = (files) => {
+  const documents = {};
+  if (files.soat) {
+    documents.soat = {
+      filename: files.soat[0].filename,
+      originalName: files.soat[0].originalname,
+      path: files.soat[0].path,
+      uploadDate: new Date(),
+      size: files.soat[0].size
+    };
+  }
+  if (files.technicalReview) {
+    documents.technicalReview = {
+      filename: files.technicalReview[0].filename,
+      originalName: files.technicalReview[0].originalname,
+      path: files.technicalReview[0].path,
+      uploadDate: new Date(),
+      size: files.technicalReview[0].size
+    };
+  }
+  if (files.propertyCard) {
+    documents.propertyCard = {
+      filename: files.propertyCard[0].filename,
+      originalName: files.propertyCard[0].originalname,
+      path: files.propertyCard[0].path,
+      uploadDate: new Date(),
+      size: files.propertyCard[0].size
+    };
+  }
+  if (files.others && files.others.length > 0) {
+    documents.others = files.others.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: file.path,
+      uploadDate: new Date(),
+      size: file.size,
+      description: '' // Frontend might need to send descriptions for 'others'
+    }));
+  }
+  return documents;
+};
+
 
 // All routes are protected
 router.use(protect);
@@ -103,7 +191,7 @@ router.get('/:id', async (req, res) => {
 // @desc    Create new machinery
 // @route   POST /api/machinery
 // @access  Private
-router.post('/', [
+router.post('/', upload.fields(machineryUploadFields), [
   body('brand')
     .trim()
     .isLength({ min: 1, max: 100 })
@@ -129,16 +217,27 @@ router.post('/', [
   body('purchasePrice')
     .optional()
     .isFloat({ min: 0 })
-    .withMessage('Purchase price must be a positive number')
+    .withMessage('Purchase price must be a positive number'),
+  body('soatExpiration').optional().isISO8601().toDate().withMessage('Invalid SOAT expiration date'),
+  body('technicalReviewExpiration').optional().isISO8601().toDate().withMessage('Invalid technical review expiration date'),
+  body('warehouse').optional().isMongoId().withMessage('Invalid warehouse ID'),
+  body('notes').optional().isString().trim().isLength({ max: 1000 }).withMessage('Notes must be less than 1000 characters')
 ], async (req, res) => {
   try {
-    console.log('Creating new machinery:', req.body);
+    console.log('Creating new machinery. Body:', req.body);
+    console.log('Files:', req.files); // Log uploaded files
     console.log('User ID:', req.user._id);
     
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       console.log('Validation errors:', errors.array());
+      // If validation fails, remove uploaded files to prevent orphans
+      if (req.files) {
+        Object.values(req.files).forEach(fileArray => {
+          fileArray.forEach(file => fs.unlinkSync(file.path));
+        });
+      }
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -148,30 +247,67 @@ router.post('/', [
 
     // Check if serial number already exists
     const existingMachinery = await Machinery.findOne({ 
-      serialNumber: req.body.serialNumber 
+      serialNumber: req.body.serialNumber,
+      createdBy: req.user._id // Ensure uniqueness per user if needed, or globally
     });
     
     if (existingMachinery) {
       console.log('Serial number already exists:', req.body.serialNumber);
+      // Remove uploaded files
+      if (req.files) {
+        Object.values(req.files).forEach(fileArray => {
+          fileArray.forEach(file => fs.unlinkSync(file.path));
+        });
+      }
       return res.status(400).json({
         success: false,
-        message: 'A machinery with this serial number already exists'
+        message: 'A machinery with this serial number already exists for your account.'
       });
     }
+    
+    const documents = buildDocumentsObject(req.files || {});
 
-    // Create machinery
+    // Create machinery data
     const machineryData = {
       ...req.body,
-      createdBy: req.user._id
+      createdBy: req.user._id,
+      documents: documents,
+      // Ensure numeric fields are parsed correctly if coming as strings from FormData
+      year: parseInt(req.body.year),
+      hourMeter: req.body.hourMeter ? parseFloat(req.body.hourMeter) : 0,
+      purchasePrice: req.body.purchasePrice ? parseFloat(req.body.purchasePrice) : undefined,
+      // Handle optional date fields
+      purchaseDate: req.body.purchaseDate ? req.body.purchaseDate : undefined,
+      soatExpiration: req.body.soatExpiration ? req.body.soatExpiration : undefined,
+      technicalReviewExpiration: req.body.technicalReviewExpiration ? req.body.technicalReviewExpiration : undefined,
+      warehouse: req.body.warehouse ? req.body.warehouse : undefined,
     };
 
-    console.log('Creating machinery with data:', machineryData);
+    // Remove empty optional fields so Mongoose defaults can apply if necessary
+    for (const key in machineryData) {
+      if (machineryData[key] === undefined || machineryData[key] === null || machineryData[key] === '') {
+        delete machineryData[key];
+      }
+    }
+    // Re-assign required fields that might have been deleted if sent as empty string
+    machineryData.brand = req.body.brand;
+    machineryData.model = req.body.model;
+    machineryData.serialNumber = req.body.serialNumber;
+    machineryData.type = req.body.type;
+    machineryData.year = parseInt(req.body.year);
+    machineryData.createdBy = req.user._id;
+
+
+    console.log('Attempting to create machinery with data:', JSON.stringify(machineryData, null, 2));
 
     const machinery = new Machinery(machineryData);
     const savedMachinery = await machinery.save();
     
     // Populate the created machinery
-    await savedMachinery.populate('createdBy', 'name email');
+    await savedMachinery.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'warehouse', select: 'name department' }
+    ]);
     
     console.log('Machinery created successfully:', savedMachinery._id);
 
@@ -180,20 +316,41 @@ router.post('/', [
       data: savedMachinery
     });
   } catch (error) {
-    console.error('Create machinery error:', error);
+    console.error('Create machinery error:', error.message);
     console.error('Error stack:', error.stack);
+
+    // Remove uploaded files in case of error during save
+    if (req.files) {
+      Object.values(req.files).forEach(fileArray => {
+        fileArray.forEach(file => {
+          try {
+            fs.unlinkSync(file.path);
+            console.log('Cleaned up file:', file.path);
+          } catch (unlinkErr) {
+            console.error('Error cleaning up file:', unlinkErr);
+          }
+        });
+      });
+    }
     
-    if (error.code === 11000) {
+    if (error.code === 11000) { // Duplicate key error (e.g. serialNumber)
       return res.status(400).json({
         success: false,
-        message: 'A machinery with this serial number already exists'
+        message: 'A machinery with this serial number already exists.' // More specific message
+      });
+    }
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed during save.',
+        errors: error.errors
       });
     }
     
     res.status(500).json({
       success: false,
       message: 'Server error while creating machinery',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? { message: error.message, stack: error.stack, code: error.code, name: error.name } : undefined
     });
   }
 });
@@ -201,7 +358,7 @@ router.post('/', [
 // @desc    Update machinery
 // @route   PUT /api/machinery/:id
 // @access  Private
-router.put('/:id', [
+router.put('/:id', upload.fields(machineryUploadFields), [
   body('brand')
     .optional()
     .trim()
@@ -232,15 +389,25 @@ router.put('/:id', [
   body('purchasePrice')
     .optional()
     .isFloat({ min: 0 })
-    .withMessage('Purchase price must be a positive number')
+    .withMessage('Purchase price must be a positive number'),
+  body('soatExpiration').optional({ checkFalsy: true }).isISO8601().toDate().withMessage('Invalid SOAT expiration date'),
+  body('technicalReviewExpiration').optional({ checkFalsy: true }).isISO8601().toDate().withMessage('Invalid technical review expiration date'),
+  body('warehouse').optional({ checkFalsy: true }).isMongoId().withMessage('Invalid warehouse ID'),
+  body('notes').optional({ checkFalsy: true }).isString().trim().isLength({ max: 1000 }).withMessage('Notes must be less than 1000 characters')
 ], async (req, res) => {
   try {
-    console.log('Updating machinery:', req.params.id, req.body);
+    console.log('Updating machinery. ID:', req.params.id, 'Body:', req.body);
+    console.log('Files:', req.files); // Log uploaded files
     console.log('User ID:', req.user._id);
-    
-    // Check for validation errors
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      // If validation fails, remove any newly uploaded files
+      if (req.files) {
+        Object.values(req.files).forEach(fileArray => {
+          fileArray.forEach(file => fs.unlinkSync(file.path));
+        });
+      }
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -248,46 +415,148 @@ router.put('/:id', [
       });
     }
 
-    // Check if serial number already exists (excluding current machinery)
-    if (req.body.serialNumber) {
-      const existingMachinery = await Machinery.findOne({ 
-        serialNumber: req.body.serialNumber,
-        _id: { $ne: req.params.id }
-      });
-      
-      if (existingMachinery) {
-        return res.status(400).json({
-          success: false,
-          message: 'A machinery with this serial number already exists'
+    const machineryToUpdate = await Machinery.findOne({
+      _id: req.params.id,
+      createdBy: req.user._id
+    });
+
+    if (!machineryToUpdate) {
+      // Remove any newly uploaded files if machinery not found
+      if (req.files) {
+        Object.values(req.files).forEach(fileArray => {
+          fileArray.forEach(file => fs.unlinkSync(file.path));
         });
       }
-    }
-
-    const machinery = await Machinery.findOneAndUpdate(
-      { _id: req.params.id, createdBy: req.user._id },
-      req.body,
-      { new: true, runValidators: true }
-    ).populate('createdBy', 'name email');
-
-    if (!machinery) {
       return res.status(404).json({
         success: false,
         message: 'Machinery not found'
       });
     }
 
-    console.log('Machinery updated successfully');
+    // Check if serial number already exists (excluding current machinery)
+    if (req.body.serialNumber && req.body.serialNumber !== machineryToUpdate.serialNumber) {
+      const existingMachinery = await Machinery.findOne({ 
+        serialNumber: req.body.serialNumber,
+        createdBy: req.user._id, // Check within the same user's items
+        _id: { $ne: req.params.id }
+      });
+      
+      if (existingMachinery) {
+        // Remove any newly uploaded files
+        if (req.files) {
+          Object.values(req.files).forEach(fileArray => {
+            fileArray.forEach(file => fs.unlinkSync(file.path));
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          message: 'A machinery with this serial number already exists for your account.'
+        });
+      }
+    }
+
+    const updateData = { ...req.body };
+
+    // Handle file updates
+    if (req.files && Object.keys(req.files).length > 0) {
+      const newDocuments = buildDocumentsObject(req.files);
+      
+      // Delete old files if new ones are uploaded
+      const oldDocuments = machineryToUpdate.documents || {};
+      for (const docType in newDocuments) { // soat, technicalReview, propertyCard
+        if (newDocuments[docType] && oldDocuments[docType] && oldDocuments[docType].path) {
+          try {
+            if (fs.existsSync(oldDocuments[docType].path)) {
+              fs.unlinkSync(oldDocuments[docType].path);
+              console.log('Deleted old file:', oldDocuments[docType].path);
+            }
+          } catch (err) {
+            console.error('Error deleting old file:', err);
+          }
+        }
+      }
+      // For 'others', this logic would need to be more complex if users can delete individual 'other' files.
+      // Assuming for now 'others' array is replaced if new 'others' are uploaded.
+      if (newDocuments.others && oldDocuments.others && oldDocuments.others.length > 0) {
+         oldDocuments.others.forEach(oldFile => {
+           if (oldFile.path && fs.existsSync(oldFile.path)) {
+             try {
+               fs.unlinkSync(oldFile.path);
+               console.log('Deleted old "other" file:', oldFile.path);
+             } catch (err) {
+               console.error('Error deleting old "other" file:', err);
+             }
+           }
+         });
+      }
+      updateData.documents = { ...oldDocuments, ...newDocuments };
+    }
+
+    // Ensure numeric fields are parsed correctly
+    if (updateData.year) updateData.year = parseInt(updateData.year);
+    if (updateData.hourMeter) updateData.hourMeter = parseFloat(updateData.hourMeter);
+    if (updateData.purchasePrice) updateData.purchasePrice = parseFloat(updateData.purchasePrice);
+    
+    // Handle optional date fields (if empty string is passed, set to null/undefined)
+    ['purchaseDate', 'soatExpiration', 'technicalReviewExpiration'].forEach(dateField => {
+      if (updateData[dateField] === '' || updateData[dateField] === null) {
+        updateData[dateField] = undefined;
+      }
+    });
+     if (updateData.warehouse === '' || updateData.warehouse === null) {
+        updateData.warehouse = undefined;
+    }
+
+
+    // Update the machinery
+    Object.assign(machineryToUpdate, updateData);
+    const updatedMachinery = await machineryToUpdate.save();
+    
+    await updatedMachinery.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'warehouse', select: 'name department' }
+    ]);
+
+    console.log('Machinery updated successfully:', updatedMachinery._id);
 
     res.status(200).json({
       success: true,
-      data: machinery
+      data: updatedMachinery
     });
   } catch (error) {
-    console.error('Update machinery error:', error);
+    console.error('Update machinery error:', error.message);
+    console.error('Error stack:', error.stack);
+    // Clean up newly uploaded files if error occurs during save
+    if (req.files) {
+      Object.values(req.files).forEach(fileArray => {
+        fileArray.forEach(file => {
+          try {
+            fs.unlinkSync(file.path);
+            console.log('Cleaned up file after error:', file.path);
+          } catch (unlinkErr) {
+            console.error('Error cleaning up file after error:', unlinkErr);
+          }
+        });
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'A machinery with this serial number already exists.'
+      });
+    }
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed during update.',
+        errors: error.errors
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Server error while updating machinery',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? { message: error.message, stack: error.stack, name: error.name } : undefined
     });
   }
 });
@@ -300,7 +569,7 @@ router.delete('/:id', async (req, res) => {
     console.log('Deleting machinery:', req.params.id);
     console.log('User ID:', req.user._id);
     
-    const machinery = await Machinery.findOneAndDelete({
+    const machinery = await Machinery.findOne({
       _id: req.params.id,
       createdBy: req.user._id
     });
@@ -311,6 +580,38 @@ router.delete('/:id', async (req, res) => {
         message: 'Machinery not found'
       });
     }
+
+    // Delete associated files
+    if (machinery.documents) {
+      const docPaths = [];
+      if (machinery.documents.soat && machinery.documents.soat.path) {
+        docPaths.push(machinery.documents.soat.path);
+      }
+      if (machinery.documents.technicalReview && machinery.documents.technicalReview.path) {
+        docPaths.push(machinery.documents.technicalReview.path);
+      }
+      if (machinery.documents.propertyCard && machinery.documents.propertyCard.path) {
+        docPaths.push(machinery.documents.propertyCard.path);
+      }
+      if (machinery.documents.others && machinery.documents.others.length > 0) {
+        machinery.documents.others.forEach(doc => {
+          if (doc.path) docPaths.push(doc.path);
+        });
+      }
+
+      docPaths.forEach(filePath => {
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+            console.log('Deleted associated file:', filePath);
+          } catch (err) {
+            console.error('Error deleting associated file:', filePath, err);
+          }
+        }
+      });
+    }
+
+    await Machinery.deleteOne({ _id: req.params.id, createdBy: req.user._id });
 
     console.log('Machinery deleted successfully');
 

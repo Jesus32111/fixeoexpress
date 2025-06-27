@@ -25,6 +25,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 // Connect to MongoDB
@@ -59,7 +60,7 @@ app.use(limiter);
 // Stricter rate limiting for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 100,
   message: 'Too many authentication attempts, please try again later.',
 });
 

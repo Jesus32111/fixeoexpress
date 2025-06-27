@@ -79,6 +79,51 @@ const machinerySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  soatExpiration: {
+    type: Date
+  },
+  technicalReviewExpiration: {
+    type: Date
+  },
+  warehouse: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Warehouse'
+  },
+  notes: {
+    type: String,
+    maxlength: [1000, 'Notes cannot be more than 1000 characters']
+  },
+  documents: {
+    soat: {
+      filename: String,
+      originalName: String,
+      path: String, // Store path to the file
+      uploadDate: Date,
+      size: Number
+    },
+    technicalReview: {
+      filename: String,
+      originalName: String,
+      path: String,
+      uploadDate: Date,
+      size: Number
+    },
+    propertyCard: {
+      filename: String,
+      originalName: String,
+      path: String,
+      uploadDate: Date,
+      size: Number
+    },
+    others: [{
+      filename: String,
+      originalName: String,
+      path: String,
+      uploadDate: Date,
+      size: Number,
+      description: String
+    }]
   }
 }, {
   timestamps: true,
