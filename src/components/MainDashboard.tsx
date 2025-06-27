@@ -59,9 +59,9 @@ const MainDashboard: React.FC = () => {
           return acc;
         }, {});
         setMachineryStatusData([
-          { name: 'Disponible', value: machineryStatusCounts['Disponible'] || 0, color: 'bg-green-500' },
+          { name: 'Operativo', value: machineryStatusCounts['Disponible'] || 0, color: 'bg-green-500' },
           { name: 'En Mantenimiento', value: machineryStatusCounts['En Mantenimiento'] || 0, color: 'bg-yellow-500' },
-          { name: 'Alquilada', value: machineryStatusCounts['Alquilada'] || 0, color: 'bg-blue-500' },
+          { name: 'No disponible', value: machineryStatusCounts['Alquilada'] || 0, color: 'bg-blue-500' },
           { name: 'Fuera de Servicio', value: machineryStatusCounts['Fuera de Servicio'] || 0, color: 'bg-red-500' },
         ]);
 
@@ -217,7 +217,7 @@ const MainDashboard: React.FC = () => {
               <div className="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500">Ingresos del Mes</p>
-                  <p className="text-3xl font-bold text-gray-800">${monthlyIncome.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-gray-800">S/ {monthlyIncome.toLocaleString()}</p>
                 </div>
                 <Wallet className="h-10 w-10 text-purple-500" />
               </div>

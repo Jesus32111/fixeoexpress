@@ -167,21 +167,23 @@ const FinanceModule: React.FC = () => {
         }
       });
       
-      console.log('API Response for /finance:', response); // DEBUG
-      if (response && response.data) {
-        console.log('Data received:', response.data.data); // DEBUG
-        console.log('Total items from API:', response.data.total); // DEBUG
-        setFinanceRecords(response.data.data || []);
+      console.log('API Response for /finance:', response);
+      if (response && response.data && Array.isArray(response.data.data)) {
+        // Ordenar los registros por fecha de creación (createdAt) descendente
+        const sortedRecords = response.data.data.sort((a: FinanceRecord, b: FinanceRecord) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setFinanceRecords(sortedRecords);
         setTotalPages(response.data.pages || 1);
         setTotalItems(response.data.total || 0);
       } else {
-        console.log('No response data from /finance'); // DEBUG
+        console.log('No response data or data is not an array from /finance');
         setFinanceRecords([]);
         setTotalPages(1);
         setTotalItems(0);
       }
     } catch (error: any) {
-      console.error('Error fetching finance records:', error); // DEBUG
+      console.error('Error fetching finance records:', error);
       const errorMessage = error.response?.data?.message || 'Error al cargar los registros financieros';
       setError(errorMessage);
       setFinanceRecords([]);

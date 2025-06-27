@@ -104,7 +104,7 @@ router.get('/', async (req, res) => {
     console.log('Getting all machineries for user:', req.user._id);
     console.log('Query parameters:', req.query);
     
-    const { status, type, search } = req.query;
+    const { status, search } = req.query; // Removed 'type' as it's not in the new model
     let query = { createdBy: req.user._id };
 
     // Add filters
@@ -112,15 +112,12 @@ router.get('/', async (req, res) => {
       query.status = status;
       console.log('Filtering by status:', status);
     }
-    if (type && type !== 'all') {
-      query.type = type;
-      console.log('Filtering by type:', type);
-    }
+    // Removed type filter as it's no longer part of the model
     if (search) {
       query.$or = [
         { brand: { $regex: search, $options: 'i' } },
         { model: { $regex: search, $options: 'i' } },
-        { serialNumber: { $regex: search, $options: 'i' } }
+        { plate: { $regex: search, $options: 'i' } } // Changed from serialNumber to plate
       ];
       console.log('Filtering by search:', search);
     }
@@ -192,35 +189,30 @@ router.get('/:id', async (req, res) => {
 // @route   POST /api/machinery
 // @access  Private
 router.post('/', upload.fields(machineryUploadFields), [
-  body('brand')
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Brand is required and must be less than 100 characters'),
-  body('model')
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Model is required and must be less than 100 characters'),
-  body('serialNumber')
+  body('plate') // Changed from serialNumber to plate
     .trim()
     .isLength({ min: 1, max: 50 })
-    .withMessage('Serial number is required and must be less than 50 characters'),
-  body('type')
-    .isIn(['Excavadora', 'Bulldozer', 'Grúa', 'Cargadora', 'Compactadora', 'Retroexcavadora', 'Motoniveladora', 'Volquete', 'Otro'])
-    .withMessage('Invalid machinery type'),
+    .withMessage('Plate/Serial is required and must be less than 50 characters'),
+  body('brand')
+    .trim()
+    .isLength({ min: 1, max: 50 }) // Max length consistent with model
+    .withMessage('Brand is required and must be less than 50 characters'),
+  body('model')
+    .trim()
+    .isLength({ min: 1, max: 50 }) // Max length consistent with model
+    .withMessage('Model is required and must be less than 50 characters'),
   body('year')
     .isInt({ min: 1900, max: new Date().getFullYear() + 1 })
     .withMessage('Year must be a valid year'),
-  body('hourMeter')
-    .optional()
+  body('currentMileage') // Changed from hourMeter
     .isFloat({ min: 0 })
-    .withMessage('Hour meter must be a positive number'),
-  body('purchasePrice')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Purchase price must be a positive number'),
-  body('soatExpiration').optional().isISO8601().toDate().withMessage('Invalid SOAT expiration date'),
-  body('technicalReviewExpiration').optional().isISO8601().toDate().withMessage('Invalid technical review expiration date'),
-  body('warehouse').optional().isMongoId().withMessage('Invalid warehouse ID'),
+    .withMessage('Current Mileage/Hours must be a positive number'),
+  body('status')
+    .isIn(['Operativo', 'En Mantenimiento', 'No Disponible', 'Fuera de Servicio', 'Alquilada'])
+    .withMessage('Invalid status'),
+  body('soatExpiration').isISO8601().toDate().withMessage('Invalid SOAT/Equivalent expiration date'),
+  body('technicalReviewExpiration').isISO8601().toDate().withMessage('Invalid Technical Review/Equivalent expiration date'),
+  body('warehouse').isMongoId().withMessage('Invalid warehouse ID'),
   body('notes').optional().isString().trim().isLength({ max: 1000 }).withMessage('Notes must be less than 1000 characters')
 ], async (req, res) => {
   try {
@@ -245,14 +237,14 @@ router.post('/', upload.fields(machineryUploadFields), [
       });
     }
 
-    // Check if serial number already exists
+    // Check if plate/serial already exists
     const existingMachinery = await Machinery.findOne({ 
-      serialNumber: req.body.serialNumber,
-      createdBy: req.user._id // Ensure uniqueness per user if needed, or globally
+      plate: req.body.plate.toUpperCase(), // Store plate in uppercase
+      createdBy: req.user._id 
     });
     
     if (existingMachinery) {
-      console.log('Serial number already exists:', req.body.serialNumber);
+      console.log('Plate/Serial already exists:', req.body.plate);
       // Remove uploaded files
       if (req.files) {
         Object.values(req.files).forEach(fileArray => {
@@ -261,7 +253,7 @@ router.post('/', upload.fields(machineryUploadFields), [
       }
       return res.status(400).json({
         success: false,
-        message: 'A machinery with this serial number already exists for your account.'
+        message: 'A machinery with this Plate/Serial already exists for your account.'
       });
     }
     
@@ -270,32 +262,21 @@ router.post('/', upload.fields(machineryUploadFields), [
     // Create machinery data
     const machineryData = {
       ...req.body,
+      plate: req.body.plate.toUpperCase(), // Store plate in uppercase
       createdBy: req.user._id,
       documents: documents,
-      // Ensure numeric fields are parsed correctly if coming as strings from FormData
       year: parseInt(req.body.year),
-      hourMeter: req.body.hourMeter ? parseFloat(req.body.hourMeter) : 0,
-      purchasePrice: req.body.purchasePrice ? parseFloat(req.body.purchasePrice) : undefined,
-      // Handle optional date fields
-      purchaseDate: req.body.purchaseDate ? req.body.purchaseDate : undefined,
-      soatExpiration: req.body.soatExpiration ? req.body.soatExpiration : undefined,
-      technicalReviewExpiration: req.body.technicalReviewExpiration ? req.body.technicalReviewExpiration : undefined,
-      warehouse: req.body.warehouse ? req.body.warehouse : undefined,
+      currentMileage: parseFloat(req.body.currentMileage),
+      soatExpiration: req.body.soatExpiration, // Already toDate-d by validator
+      technicalReviewExpiration: req.body.technicalReviewExpiration, // Already toDate-d by validator
+      warehouse: req.body.warehouse,
+      // Fields not present in Vehicle model are removed:
+      // type, hourMeter, purchasePrice, purchaseDate, description, location, compatibleParts
     };
-
-    // Remove empty optional fields so Mongoose defaults can apply if necessary
-    for (const key in machineryData) {
-      if (machineryData[key] === undefined || machineryData[key] === null || machineryData[key] === '') {
-        delete machineryData[key];
-      }
-    }
-    // Re-assign required fields that might have been deleted if sent as empty string
-    machineryData.brand = req.body.brand;
-    machineryData.model = req.body.model;
-    machineryData.serialNumber = req.body.serialNumber;
-    machineryData.type = req.body.type;
-    machineryData.year = parseInt(req.body.year);
-    machineryData.createdBy = req.user._id;
+    
+    // Clean up any undefined optional fields that were not provided if necessary
+    if (!req.body.notes) delete machineryData.notes;
+    if (!req.body.status) machineryData.status = 'Operativo'; // Default if not provided
 
 
     console.log('Attempting to create machinery with data:', JSON.stringify(machineryData, null, 2));
@@ -333,10 +314,10 @@ router.post('/', upload.fields(machineryUploadFields), [
       });
     }
     
-    if (error.code === 11000) { // Duplicate key error (e.g. serialNumber)
+    if (error.code === 11000) { // Duplicate key error (e.g. plate)
       return res.status(400).json({
         success: false,
-        message: 'A machinery with this serial number already exists.' // More specific message
+        message: 'A machinery with this Plate/Serial already exists.' // More specific message
       });
     }
     if (error.name === 'ValidationError') {
@@ -359,39 +340,35 @@ router.post('/', upload.fields(machineryUploadFields), [
 // @route   PUT /api/machinery/:id
 // @access  Private
 router.put('/:id', upload.fields(machineryUploadFields), [
-  body('brand')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Brand must be less than 100 characters'),
-  body('model')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 100 })
-    .withMessage('Model must be less than 100 characters'),
-  body('serialNumber')
+  body('plate') // Changed from serialNumber
     .optional()
     .trim()
     .isLength({ min: 1, max: 50 })
-    .withMessage('Serial number must be less than 50 characters'),
-  body('type')
+    .withMessage('Plate/Serial must be less than 50 characters'),
+  body('brand')
     .optional()
-    .isIn(['Excavadora', 'Bulldozer', 'Grúa', 'Cargadora', 'Compactadora', 'Retroexcavadora', 'Motoniveladora', 'Volquete', 'Otro'])
-    .withMessage('Invalid machinery type'),
+    .trim()
+    .isLength({ min: 1, max: 50 }) // Max length consistent with model
+    .withMessage('Brand must be less than 50 characters'),
+  body('model')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 }) // Max length consistent with model
+    .withMessage('Model must be less than 50 characters'),
   body('year')
     .optional()
     .isInt({ min: 1900, max: new Date().getFullYear() + 1 })
     .withMessage('Year must be a valid year'),
-  body('hourMeter')
+  body('currentMileage') // Changed from hourMeter
     .optional()
     .isFloat({ min: 0 })
-    .withMessage('Hour meter must be a positive number'),
-  body('purchasePrice')
+    .withMessage('Current Mileage/Hours must be a positive number'),
+  body('status')
     .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Purchase price must be a positive number'),
-  body('soatExpiration').optional({ checkFalsy: true }).isISO8601().toDate().withMessage('Invalid SOAT expiration date'),
-  body('technicalReviewExpiration').optional({ checkFalsy: true }).isISO8601().toDate().withMessage('Invalid technical review expiration date'),
+    .isIn(['Operativo', 'En Mantenimiento', 'No Disponible', 'Fuera de Servicio', 'Alquilada'])
+    .withMessage('Invalid status'),
+  body('soatExpiration').optional({ checkFalsy: true }).isISO8601().toDate().withMessage('Invalid SOAT/Equivalent expiration date'),
+  body('technicalReviewExpiration').optional({ checkFalsy: true }).isISO8601().toDate().withMessage('Invalid Technical Review/Equivalent expiration date'),
   body('warehouse').optional({ checkFalsy: true }).isMongoId().withMessage('Invalid warehouse ID'),
   body('notes').optional({ checkFalsy: true }).isString().trim().isLength({ max: 1000 }).withMessage('Notes must be less than 1000 characters')
 ], async (req, res) => {
@@ -433,11 +410,11 @@ router.put('/:id', upload.fields(machineryUploadFields), [
       });
     }
 
-    // Check if serial number already exists (excluding current machinery)
-    if (req.body.serialNumber && req.body.serialNumber !== machineryToUpdate.serialNumber) {
+    // Check if plate/serial already exists (excluding current machinery)
+    if (req.body.plate && req.body.plate.toUpperCase() !== machineryToUpdate.plate) {
       const existingMachinery = await Machinery.findOne({ 
-        serialNumber: req.body.serialNumber,
-        createdBy: req.user._id, // Check within the same user's items
+        plate: req.body.plate.toUpperCase(),
+        createdBy: req.user._id, 
         _id: { $ne: req.params.id }
       });
       
@@ -450,12 +427,16 @@ router.put('/:id', upload.fields(machineryUploadFields), [
         }
         return res.status(400).json({
           success: false,
-          message: 'A machinery with this serial number already exists for your account.'
+          message: 'A machinery with this Plate/Serial already exists for your account.'
         });
       }
     }
-
+    
     const updateData = { ...req.body };
+    if (updateData.plate) {
+        updateData.plate = updateData.plate.toUpperCase();
+    }
+
 
     // Handle file updates
     if (req.files && Object.keys(req.files).length > 0) {
@@ -494,11 +475,12 @@ router.put('/:id', upload.fields(machineryUploadFields), [
 
     // Ensure numeric fields are parsed correctly
     if (updateData.year) updateData.year = parseInt(updateData.year);
-    if (updateData.hourMeter) updateData.hourMeter = parseFloat(updateData.hourMeter);
-    if (updateData.purchasePrice) updateData.purchasePrice = parseFloat(updateData.purchasePrice);
+    if (updateData.currentMileage) updateData.currentMileage = parseFloat(updateData.currentMileage);
+    // purchasePrice is removed
     
     // Handle optional date fields (if empty string is passed, set to null/undefined)
-    ['purchaseDate', 'soatExpiration', 'technicalReviewExpiration'].forEach(dateField => {
+    // purchaseDate is removed
+    ['soatExpiration', 'technicalReviewExpiration'].forEach(dateField => {
       if (updateData[dateField] === '' || updateData[dateField] === null) {
         updateData[dateField] = undefined;
       }
@@ -506,6 +488,16 @@ router.put('/:id', upload.fields(machineryUploadFields), [
      if (updateData.warehouse === '' || updateData.warehouse === null) {
         updateData.warehouse = undefined;
     }
+    
+    // Remove fields that are not part of the new model structure from updateData
+    // to prevent them from being incorrectly assigned or causing validation issues.
+    delete updateData.type;
+    delete updateData.hourMeter;
+    delete updateData.purchasePrice;
+    delete updateData.purchaseDate;
+    delete updateData.description; // Assuming description is not part of the new model based on Vehicle.js
+    delete updateData.location; // Assuming location is not part of the new model
+    delete updateData.compatibleParts; // Assuming compatibleParts is not part of the new model
 
 
     // Update the machinery
@@ -543,7 +535,7 @@ router.put('/:id', upload.fields(machineryUploadFields), [
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'A machinery with this serial number already exists.'
+        message: 'A machinery with this Plate/Serial already exists.'
       });
     }
     if (error.name === 'ValidationError') {
@@ -643,7 +635,11 @@ router.post('/:id/maintenance', [
   body('cost')
     .optional()
     .isFloat({ min: 0 })
-    .withMessage('Cost must be a positive number')
+    .withMessage('Cost must be a positive number'),
+  body('mileage') // Added mileage for maintenance history, consistent with new model
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Mileage must be a positive number')
 ], async (req, res) => {
   try {
     console.log('Adding maintenance record to machinery:', req.params.id);

@@ -20,83 +20,83 @@ import {
 } from 'lucide-react';
 import { apiClient } from '../context/AuthContext';
 
-interface Warehouse { // Added Warehouse interface
+interface Warehouse {
   _id: string;
   name: string;
   address: string;
   department: string;
 }
 
+// Interface ajustada para coincidir con Vehicle.js
 interface Machinery {
   _id: string;
+  plate: string; // Cambiado de serialNumber
   brand: string;
   model: string;
-  serialNumber: string;
-  type: string;
   year: number;
-  status: 'Disponible' | 'Alquilada' | 'En Mantenimiento' | 'Fuera de Servicio';
-  hourMeter: number;
-  description?: string;
-  purchaseDate?: string;
-  purchasePrice?: number;
-  location?: string;
-  soatExpiration?: string; // Added
-  technicalReviewExpiration?: string; // Added
-  warehouse?: Warehouse; // Changed to Warehouse object
-  notes?: string; // Added
-  documents?: { // Added
+  currentMileage: number; // Cambiado de hourMeter
+  status: 'Operativo' | 'En Mantenimiento' | 'No Disponible' | 'Fuera de Servicio' | 'Alquilada'; // Ajustado enum
+  soatExpiration: string;
+  technicalReviewExpiration: string;
+  warehouse: Warehouse; // Asumimos que siempre estará presente y es requerido
+  documents?: {
     soat?: { filename: string; originalName: string; uploadDate: string; size: number };
     technicalReview?: { filename: string; originalName: string; uploadDate: string; size: number };
-    propertyCard?: { filename: string; originalName: string; uploadDate: string; size: number }; // Assuming similar to vehicle
+    propertyCard?: { filename: string; originalName: string; uploadDate: string; size: number };
     others?: Array<{ filename: string; originalName: string; uploadDate: string; size: number; description: string }>;
   };
-  compatibleParts?: Array<{
-    partName: string;
-    partNumber: string;
-    supplier: string;
+  notes?: string;
+  pendingMaintenance?: Array<{ // Añadido desde Vehicle.js
+    description: string;
+    priority: 'Baja' | 'Media' | 'Alta' | 'Crítica';
+    estimatedCost?: number;
+    createdAt: string;
   }>;
-  maintenanceHistory?: Array<{
+  maintenanceHistory?: Array<{ // Ajustado para incluir mileage
     date: string;
     type: 'Preventivo' | 'Correctivo' | 'Inspección';
     description: string;
     cost?: number;
+    mileage?: number; // Añadido
     technician?: string;
   }>;
+  // Campos virtuales del backend (opcionales en frontend si no se usan directamente para mostrar)
+  soatStatus?: 'valid' | 'expiring' | 'expired';
+  technicalReviewStatus?: 'valid' | 'expiring' | 'expired';
+  needsAttention?: boolean;
+  createdBy: string; // o un objeto User si se popula
   createdAt: string;
   updatedAt: string;
+  // Campos eliminados: type, description (si no es parte del nuevo modelo), purchaseDate, purchasePrice, location, compatibleParts
 }
 
 const MachineryModule: React.FC = () => {
   const [machineries, setMachineries] = useState<Machinery[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]); // Added warehouses state
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingMachinery, setEditingMachinery] = useState<Machinery | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [warehouseFilter, setWarehouseFilter] = useState('all'); // Added warehouse filter
+  // const [typeFilter, setTypeFilter] = useState('all'); // Eliminado, ya no existe el campo 'type'
+  const [warehouseFilter, setWarehouseFilter] = useState('all');
 
   const [formData, setFormData] = useState({
+    plate: '', // Cambiado de serialNumber
     brand: '',
     model: '',
-    serialNumber: '',
-    type: 'Otro',
     year: new Date().getFullYear(),
-    status: 'Disponible',
-    hourMeter: 0,
-    description: '',
-    purchaseDate: '',
-    purchasePrice: '',
-    location: '',
-    soatExpiration: '', // Added
-    technicalReviewExpiration: '', // Added
-    warehouse: '', // Added
-    notes: '' // Added
+    currentMileage: 0, // Cambiado de hourMeter
+    status: 'Operativo', // Ajustado el valor por defecto
+    soatExpiration: '', 
+    technicalReviewExpiration: '', 
+    warehouse: '', 
+    notes: '' 
+    // Campos eliminados: type, description, purchaseDate, purchasePrice, location
   });
 
-  const [files, setFiles] = useState({ // Added files state
+  const [files, setFiles] = useState({
     soat: null as File | null,
     technicalReview: null as File | null,
     propertyCard: null as File | null,
@@ -106,18 +106,18 @@ const MachineryModule: React.FC = () => {
   const machineryTypes = [
     'Excavadora', 'Bulldozer', 'Grúa', 'Cargadora', 'Compactadora',
     'Retroexcavadora', 'Motoniveladora', 'Volquete', 'Otro'
-  ];
+  ]; // Este array ya no se usará directamente para el formulario, pero se puede mantener si hay lógica de filtrado antigua.
 
-  const statusOptions = [
-    'Disponible', 'Alquilada', 'En Mantenimiento', 'Fuera de Servicio'
+  const statusOptions = [ // Ajustado para coincidir con el nuevo modelo
+    'Operativo', 'En Mantenimiento', 'No Disponible', 'Fuera de Servicio', 'Alquilada'
   ];
 
   useEffect(() => {
     fetchMachineries();
-    fetchWarehouses(); // Added fetchWarehouses call
+    fetchWarehouses(); 
   }, []);
 
-  const fetchWarehouses = async () => { // Added fetchWarehouses function
+  const fetchWarehouses = async () => {
     try {
       const response = await apiClient.get('/warehouses');
       setWarehouses(response.data.data || []);
@@ -131,21 +131,16 @@ const MachineryModule: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      console.log('Fetching machineries with filters:', {
+      const params: any = {
+        search: searchTerm || undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
-        type: typeFilter !== 'all' ? typeFilter : undefined,
-        warehouse: warehouseFilter !== 'all' ? warehouseFilter : undefined, // Added warehouse filter
-        search: searchTerm || undefined
-      });
+        warehouse: warehouseFilter !== 'all' ? warehouseFilter : undefined,
+      };
+      // El filtro 'type' se elimina ya que el campo no existe en el nuevo modelo
+      
+      console.log('Fetching machineries with filters:', params);
 
-      const response = await apiClient.get('/machinery', {
-        params: {
-          status: statusFilter !== 'all' ? statusFilter : undefined,
-          type: typeFilter !== 'all' ? typeFilter : undefined,
-          warehouse: warehouseFilter !== 'all' ? warehouseFilter : undefined, // Added warehouse filter
-          search: searchTerm || undefined
-        }
-      });
+      const response = await apiClient.get('/machinery', { params });
       
       console.log('Machineries fetched successfully:', response.data);
       setMachineries(response.data.data || []);
@@ -165,7 +160,7 @@ const MachineryModule: React.FC = () => {
     }, 300);
 
     return () => clearTimeout(delayedSearch);
-  }, [searchTerm, statusFilter, typeFilter, warehouseFilter]); // Added warehouseFilter to dependencies
+  }, [searchTerm, statusFilter, warehouseFilter]); // Eliminado typeFilter de las dependencias
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,9 +177,13 @@ const MachineryModule: React.FC = () => {
           formDataToSend.append(key, value.toString());
         }
       });
-      formDataToSend.set('year', formData.year.toString()); // ensure year is always sent
-      formDataToSend.set('hourMeter', formData.hourMeter.toString()); // ensure hourMeter is always sent
-
+      // Asegurarse de que los campos numéricos se envíen correctamente
+      formDataToSend.set('year', formData.year.toString());
+      formDataToSend.set('currentMileage', formData.currentMileage.toString());
+      // Los campos que no están en el nuevo modelo no se añaden explícitamente
+      // como type, description, purchaseDate, purchasePrice, location.
+      // El backend debería ignorarlos si se envían accidentalmente,
+      // pero es mejor no enviarlos desde el frontend.
 
       // Add files
       if (files.soat) formDataToSend.append('soat', files.soat);
@@ -227,23 +226,19 @@ const MachineryModule: React.FC = () => {
   const handleEdit = (machinery: Machinery) => {
     setEditingMachinery(machinery);
     setFormData({
+      plate: machinery.plate, // Cambiado de serialNumber
       brand: machinery.brand,
       model: machinery.model,
-      serialNumber: machinery.serialNumber,
-      type: machinery.type,
       year: machinery.year,
+      currentMileage: machinery.currentMileage, // Cambiado de hourMeter
       status: machinery.status,
-      hourMeter: machinery.hourMeter,
-      description: machinery.description || '',
-      purchaseDate: machinery.purchaseDate ? machinery.purchaseDate.split('T')[0] : '',
-      purchasePrice: machinery.purchasePrice?.toString() || '',
-      location: machinery.location || '',
-      soatExpiration: machinery.soatExpiration ? machinery.soatExpiration.split('T')[0] : '', // Added
-      technicalReviewExpiration: machinery.technicalReviewExpiration ? machinery.technicalReviewExpiration.split('T')[0] : '', // Added
-      warehouse: machinery.warehouse?._id || '', // Added
-      notes: machinery.notes || '' // Added
+      soatExpiration: machinery.soatExpiration ? machinery.soatExpiration.split('T')[0] : '',
+      technicalReviewExpiration: machinery.technicalReviewExpiration ? machinery.technicalReviewExpiration.split('T')[0] : '',
+      warehouse: machinery.warehouse?._id || '', // Asumimos que warehouse puede ser null o undefined si no está seteado
+      notes: machinery.notes || ''
+      // Campos eliminados: type, description, purchaseDate, purchasePrice, location
     });
-    setFiles({ // Reset files on edit
+    setFiles({
       soat: null,
       technicalReview: null,
       propertyCard: null,
@@ -269,23 +264,19 @@ const MachineryModule: React.FC = () => {
 
   const resetForm = () => {
     setFormData({
+      plate: '', // Cambiado de serialNumber
       brand: '',
       model: '',
-      serialNumber: '',
-      type: 'Otro',
       year: new Date().getFullYear(),
-      status: 'Disponible',
-      hourMeter: 0,
-      description: '',
-      purchaseDate: '',
-      purchasePrice: '',
-    location: '',
-    soatExpiration: '', // Added
-    technicalReviewExpiration: '', // Added
-    warehouse: '', // Added
-    notes: '' // Added
+      currentMileage: 0, // Cambiado de hourMeter
+      status: 'Operativo', // Ajustado el valor por defecto
+      soatExpiration: '',
+      technicalReviewExpiration: '',
+      warehouse: '',
+      notes: ''
+      // Campos eliminados: type, description, purchaseDate, purchasePrice, location
     });
-  setFiles({ // Also reset files
+  setFiles({
     soat: null,
     technicalReview: null,
     propertyCard: null,
@@ -301,14 +292,16 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
   }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string) => { // Ajustado para nuevos estados
     switch (status) {
-      case 'Disponible':
+      case 'Operativo':
         return <CheckCircle className="h-5 w-5 text-green-500" />;
       case 'Alquilada':
         return <Clock className="h-5 w-5 text-blue-500" />;
       case 'En Mantenimiento':
         return <Wrench className="h-5 w-5 text-yellow-500" />;
+      case 'No Disponible':
+        return <AlertCircle className="h-5 w-5 text-orange-500" />;
       case 'Fuera de Servicio':
         return <XCircle className="h-5 w-5 text-red-500" />;
       default:
@@ -316,14 +309,16 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string) => { // Ajustado para nuevos estados
     switch (status) {
-      case 'Disponible':
+      case 'Operativo':
         return 'bg-green-100 text-green-800';
       case 'Alquilada':
         return 'bg-blue-100 text-blue-800';
       case 'En Mantenimiento':
         return 'bg-yellow-100 text-yellow-800';
+      case 'No Disponible':
+        return 'bg-orange-100 text-orange-800';
       case 'Fuera de Servicio':
         return 'bg-red-100 text-red-800';
       default:
@@ -387,6 +382,7 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
             ))}
           </select>
 
+          {/* El filtro de tipo se elimina ya que 'type' no está en el nuevo modelo
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
@@ -396,9 +392,10 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
             {machineryTypes.map(type => (
               <option key={type} value={type}>{type}</option>
             ))}
-          </select>
+          </select> 
+          */}
 
-          <select // Added Warehouse Filter
+          <select 
             value={warehouseFilter}
             onChange={(e) => setWarehouseFilter(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -440,9 +437,9 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">
-                    {machinery.brand} {machinery.model}
+                    {machinery.brand} {machinery.model} ({machinery.year})
                   </h3>
-                  <p className="text-sm text-gray-600">S/N: {machinery.serialNumber}</p>
+                  <p className="text-sm text-gray-600">Placa/Serie: {machinery.plate}</p>
                 </div>
                 <div className="flex items-center space-x-1">
                   {getStatusIcon(machinery.status)}
@@ -450,29 +447,21 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
               </div>
 
               <div className="space-y-2 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Wrench className="h-4 w-4 mr-2" />
-                  {machinery.type} - {machinery.year}
-                </div>
+                {/* El campo 'type' ya no existe */}
                 <div className="flex items-center text-sm text-gray-600">
                   <Clock className="h-4 w-4 mr-2" />
-                  {machinery.hourMeter.toLocaleString()} horas
+                  {(machinery.currentMileage || 0).toLocaleString()} Km/Horas {/* Asegura que currentMileage sea un número */}
                 </div>
-                {machinery.warehouse && ( // Display warehouse
+                {machinery.warehouse && (
                   <div className="flex items-center text-sm text-gray-600">
                     <Building2 className="h-4 w-4 mr-2" />
                     {machinery.warehouse.name}
                   </div>
                 )}
-                {machinery.location && (
-                  <div className="flex items-center text-sm text-gray-600">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    {machinery.location}
-                  </div>
-                )}
+                {/* El campo 'location' ya no existe */}
               </div>
               
-              {/* Document Status - Placeholder, adapt if needed */}
+              {/* Document Status */}
               {(machinery.soatExpiration || machinery.technicalReviewExpiration) && (
                 <div className="space-y-1 mb-3 text-xs">
                   {machinery.soatExpiration && (
@@ -510,11 +499,15 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                 </div>
               )}
 
+              {/* El campo 'description' ya no existe en la raíz del modelo Machinery,
+                  podría estar dentro de pendingMaintenance o maintenanceHistory si es necesario.
+                  Si se eliminó por completo, este bloque se puede quitar.
               {machinery.description && (
                 <p className="text-sm text-gray-600 mb-4 line-clamp-2">
                   {machinery.description}
                 </p>
               )}
+              */}
 
               <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                 <div className="flex space-x-2">
@@ -615,18 +608,20 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Número de Serie *
+                      Placa / Número de Serie *
                     </label>
                     <input
                       type="text"
                       required
-                      value={formData.serialNumber}
-                      onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
+                      value={formData.plate}
+                      onChange={(e) => setFormData({ ...formData, plate: e.target.value.toUpperCase() })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Ej: ABC123456"
                     />
                   </div>
 
+                  {/* El campo 'Tipo' se elimina del formulario */}
+                  {/*
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Tipo *
@@ -642,6 +637,7 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                       ))}
                     </select>
                   </div>
+                  */}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -675,19 +671,22 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Horómetro
+                      Kilometraje / Horómetro *
                     </label>
                     <input
                       type="number"
+                      required
                       min="0"
                       step="0.1"
-                      value={formData.hourMeter}
-                      onChange={(e) => setFormData({ ...formData, hourMeter: parseFloat(e.target.value) || 0 })}
+                      value={formData.currentMileage}
+                      onChange={(e) => setFormData({ ...formData, currentMileage: parseFloat(e.target.value) || 0 })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Horas de uso"
+                      placeholder="Km u Horas de uso"
                     />
                   </div>
 
+                  {/* El campo 'Ubicación' se elimina del formulario */}
+                  {/*
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Ubicación
@@ -700,7 +699,10 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                       placeholder="Ubicación actual"
                     />
                   </div>
+                  */}
 
+                  {/* El campo 'Fecha de Compra' se elimina del formulario */}
+                  {/*
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Fecha de Compra
@@ -712,7 +714,10 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
-
+                  */}
+                  
+                  {/* El campo 'Precio de Compra' se elimina del formulario */}
+                  {/*
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Precio de Compra
@@ -727,14 +732,15 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                       placeholder="Precio en USD"
                     />
                   </div>
+                  */}
 
-                  {/* Added SOAT Expiration, Technical Review Expiration, Warehouse, Notes */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Vencimiento SOAT
+                      Vencimiento SOAT / Equivalente *
                     </label>
                     <input
                       type="date"
+                      required
                       value={formData.soatExpiration}
                       onChange={(e) => setFormData({ ...formData, soatExpiration: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -743,10 +749,11 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Vencimiento Revisión Técnica
+                      Vencimiento Revisión Técnica / Equivalente *
                     </label>
                     <input
                       type="date"
+                      required
                       value={formData.technicalReviewExpiration}
                       onChange={(e) => setFormData({ ...formData, technicalReviewExpiration: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -755,9 +762,10 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                   
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Almacén
+                      Almacén *
                     </label>
                     <select
+                      required // Warehouse es requerido
                       value={formData.warehouse}
                       onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -785,13 +793,13 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                   </div>
                 </div>
                 
-                {/* Document Upload Section - Copied and adapted from VehicleModule */}
+                {/* Document Upload Section */}
                 <div className="border-t border-gray-200 pt-6">
                   <h4 className="text-lg font-medium text-gray-900 mb-4">Documentos Adjuntos</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        SOAT
+                        SOAT / Equivalente
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -806,14 +814,14 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                           className="flex-1 flex items-center justify-center px-3 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50"
                         >
                           <Upload className="h-4 w-4 mr-2" />
-                          {files.soat ? files.soat.name : 'Subir SOAT'}
+                          {files.soat ? files.soat.name : 'Subir SOAT / Equiv.'}
                         </label>
                       </div>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Revisión Técnica
+                        Revisión Técnica / Equivalente
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -828,14 +836,14 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                           className="flex-1 flex items-center justify-center px-3 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50"
                         >
                           <Upload className="h-4 w-4 mr-2" />
-                          {files.technicalReview ? files.technicalReview.name : 'Subir Rev. Técnica'}
+                          {files.technicalReview ? files.technicalReview.name : 'Subir Rev. Técnica / Equiv.'}
                         </label>
                       </div>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Tarjeta de Propiedad / Factura
+                        Tarjeta de Propiedad / Factura / Equivalente
                       </label>
                       <div className="flex items-center space-x-2">
                         <input
@@ -850,7 +858,7 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                           className="flex-1 flex items-center justify-center px-3 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50"
                         >
                           <Upload className="h-4 w-4 mr-2" />
-                          {files.propertyCard ? files.propertyCard.name : 'Subir Tarjeta/Factura'}
+                          {files.propertyCard ? files.propertyCard.name : 'Subir Tarjeta / Factura / Equiv.'}
                         </label>
                       </div>
                     </div>
@@ -880,6 +888,7 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                   </div>
                 </div>
                 
+                {/* El campo 'Descripción General' se elimina del formulario si no es parte del nuevo modelo
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Descripción General
@@ -892,6 +901,7 @@ const handleFileChange = (type: keyof typeof files, file: File | File[] | null) 
                     placeholder="Descripción adicional de la maquinaria..."
                   />
                 </div>
+                */}
 
                 <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200">
                   <button
