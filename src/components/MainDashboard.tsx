@@ -9,7 +9,7 @@ import {
   Home,
   BarChart3,
   Users,
-  // FileText, // Commenting out as it's used for Contracts, but also for Reports icon
+  FileText, // Uncommented and ensured it's available
   Calendar,
   Building2,
   Car,

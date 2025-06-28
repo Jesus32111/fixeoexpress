@@ -20,23 +20,59 @@ const ReportsModule: React.FC = () => {
         responseType: 'blob', // Important for file download
       });
 
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
-      link.download = `${reportType}_report_${Date.now()}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href);
+      // Check if the response is a PDF or an error
+      if (response.data.type === 'application/pdf') {
+        const blob = new Blob([response.data], { type: 'application/pdf' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = `${reportType}_report_${Date.now()}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(link.href);
+      } else {
+        // Try to parse the error message if it's not a PDF
+        const errorData = await response.data.text(); // Read blob as text
+        try {
+            const errorJson = JSON.parse(errorData); // Try to parse as JSON
+            setError(errorJson.msg || errorJson.message || 'Error al generar el reporte.');
+        } catch (e) {
+            setError(errorData || 'Error al generar el reporte.'); // Fallback to text if not JSON
+        }
+      }
 
     } catch (err: any) {
       console.error('Error generating report:', err);
-      if (err.response && err.response.data && typeof err.response.data === 'string') {
-        setError(err.response.data);
+      if (err.response && err.response.data) {
+        // If response.data is a Blob, it means the server likely tried to send a PDF
+        // but an error occurred, or it's an actual error response as Blob.
+        if (err.response.data instanceof Blob) {
+          try {
+            const errorText = await err.response.data.text();
+            // Attempt to parse as JSON, as some errors might be structured.
+            try {
+              const errorJson = JSON.parse(errorText);
+              setError(errorJson.msg || errorJson.message || 'Error del servidor (blob).');
+            } catch (e) {
+              // If not JSON, use the raw text.
+              setError(errorText || 'Error del servidor (blob).');
+            }
+          } catch (blobError) {
+            setError('Error al leer el mensaje de error del servidor.');
+          }
+        } else if (typeof err.response.data === 'string') {
+          setError(err.response.data);
+        } else if (err.response.data.msg) {
+          setError(err.response.data.msg);
+        } else if (err.response.data.message) {
+          setError(err.response.data.message);
+        } else {
+          setError('Ocurrió un error al generar el reporte.');
+        }
       } else if (err.message) {
         setError(err.message);
       } else {
-        setError('Ocurrió un error al generar el reporte.');
+        setError('Ocurrió un error desconocido al generar el reporte.');
       }
     } finally {
       setIsLoading(false);

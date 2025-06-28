@@ -17,16 +17,19 @@ const PdfPrinter = require('pdfmake');
 const fs = require('fs');
 
 // Define fonts
-const fonts = {
-  Roboto: {
-    normal: Buffer.from(require('pdfmake/build/vfs_fonts.js').pdfMake.vfs['Roboto-Regular.ttf'], 'base64'),
-    bold: Buffer.from(require('pdfmake/build/vfs_fonts.js').pdfMake.vfs['Roboto-Medium.ttf'], 'base64'),
-    italics: Buffer.from(require('pdfmake/build/vfs_fonts.js').pdfMake.vfs['Roboto-Italic.ttf'], 'base64'),
-    bolditalics: Buffer.from(require('pdfmake/build/vfs_fonts.js').pdfMake.vfs['Roboto-MediumItalic.ttf'], 'base64'),
-  }
-};
+const vfsFonts = require('pdfmake/build/vfs_fonts.js');
 
-const printer = new PdfPrinter(fonts);
+const PdfPrinter = require('pdfmake');
+const printer = new PdfPrinter({
+  Roboto: {
+    normal: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-Regular.ttf'], 'base64'),
+    bold: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-Medium.ttf'], 'base64'),
+    italics: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-Italic.ttf'], 'base64'),
+    bolditalics: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-MediumItalic.ttf'], 'base64'),
+  }
+});
+// Assign vfs to pdfMake instance
+pdfMake.vfs = vfsFonts.pdfMake.vfs;
 
 // Function to generate PDF document definition
 const generateReportDocDefinition = (reportData) => {
@@ -68,31 +71,62 @@ const generateReportDocDefinition = (reportData) => {
       return [{ text: `No hay datos disponibles para ${title}.`, style: 'italic', margin: [0, 0, 0, 10] }];
     }
 
-    // Normalizar y filtrar las claves
-    const allKeys = items.reduce((acc, item) => {
-        Object.keys(item).forEach(key => {
-            if (!acc.includes(key) && key !== '_id' && key !== '__v' && typeof item[key] !== 'object') {
-                acc.push(key);
-            }
-        });
-        return acc;
-    }, []);
+    // Normalizar y filtrar las claves, priorizando un conjunto predefinido si existe
+    const predefinedKeyOrders = {
+      vehicles: ['plate', 'brand', 'model', 'year', 'status', 'assignedTo', 'lastMaintenanceDate', 'nextMaintenanceDate', 'fuelType', 'mileage'],
+      machinery: ['name', 'type', 'manufacturer', 'model', 'purchaseDate', 'status', 'location', 'hourlyRate', 'lastMaintenanceDate'],
+      tools: ['name', 'type', 'quantity', 'location', 'purchaseDate', 'status'],
+      parts: ['name', 'partNumber', 'quantity', 'supplier', 'price', 'location'],
+      fuel: ['vehicleId', 'date', 'liters', 'cost', 'mileageBefore', 'mileageAfter'],
+      finance: ['type', 'category', 'description', 'amount', 'date', 'relatedTo'],
+      alerts: ['type', 'message', 'severity', 'status', 'relatedTo', 'dueDate'],
+      rentals: ['customerName', 'itemType', 'itemId', 'startDate', 'endDate', 'totalAmount', 'status'],
+      warehouses: ['name', 'location', 'capacity', 'manager'],
+      // Añadir más según sea necesario
+    };
+
+    let itemKeys = [];
+    if (items.length > 0) {
+      // Usar el orden predefinido si existe para el tipo de reporte actual
+      const currentReportTypeForKeys = reportType === 'general' 
+          ? Object.keys(moduleTranslations).find(mtKey => moduleTranslations[mtKey] === title) // Mapear título a reportType
+          : reportType;
+
+      if (currentReportTypeForKeys && predefinedKeyOrders[currentReportTypeForKeys]) {
+        itemKeys = predefinedKeyOrders[currentReportTypeForKeys].filter(key => 
+            items.some(item => item.hasOwnProperty(key) && item[key] !== null && item[key] !== undefined)
+        );
+        // Añadir claves restantes que no están en el orden predefinido pero sí en los datos
+        const remainingKeys = Object.keys(items[0] || {})
+            .filter(key => !itemKeys.includes(key) && key !== '_id' && key !== '__v' && typeof items[0][key] !== 'object');
+        itemKeys.push(...remainingKeys);
+
+      } else {
+        // Fallback: extraer claves del primer objeto si no hay orden predefinido
+        itemKeys = Object.keys(items[0] || {})
+          .filter(key => key !== '_id' && key !== '__v' && typeof items[0][key] !== 'object');
+      }
+    }
+     // Si itemKeys sigue vacío (p.ej. items está vacío o todos los objetos son vacíos), no generar tabla.
+    if (itemKeys.length === 0) {
+        return [{ text: `No hay datos tabulables para ${title}.`, style: 'italic', margin: [0, 0, 0, 10] }];
+    }
 
 
-    const tableHeader = allKeys.map(key => ({ text: key.charAt(0).toUpperCase() + key.slice(1), style: 'tableHeader' }));
+    const tableHeader = itemKeys.map(key => ({ text: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'), style: 'tableHeader' }));
     
     const tableBody = items.map(item => {
-      return allKeys.map(key => {
+      return itemKeys.map(key => {
         let value = item[key];
         if (typeof value === 'boolean') {
           value = value ? 'Sí' : 'No';
-        } else if (value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)) && (value.includes('T') || value.includes('-')) ) ) {
+        } else if (value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)) && (value.includes('T') || value.includes('-') || /^\d{4}-\d{2}-\d{2}$/.test(value)) ) ) {
             try {
                  value = formatDate(value);
             } catch (e) {
                 // if not a valid date, keep original value
             }
-        } else if (typeof value === 'number' && (key.toLowerCase().includes('price') || key.toLowerCase().includes('cost') || key.toLowerCase().includes('amount'))) {
+        } else if (typeof value === 'number' && (key.toLowerCase().includes('price') || key.toLowerCase().includes('cost') || key.toLowerCase().includes('amount') || key.toLowerCase().includes('rate'))) {
           value = `S/ ${value.toFixed(2)}`;
         }
         return String(value === undefined || value === null ? 'N/A' : value);
@@ -104,7 +138,7 @@ const generateReportDocDefinition = (reportData) => {
       {
         table: {
           headerRows: 1,
-          widths: Array(allKeys.length).fill('*'), // Distribuir columnas equitativamente
+          widths: Array(itemKeys.length).fill('*'), // Distribuir columnas equitativamente
           body: [tableHeader, ...tableBody],
         },
         layout: {
@@ -191,6 +225,11 @@ const generateReportDocDefinition = (reportData) => {
           alignment: 'right',
           color: '#666666',
           margin: [0,5,0,10]
+      },
+      footerText: { // Added footerText style here
+        fontSize: 8,
+        color: '#AAAAAA',
+        italics: true
       }
     },
     defaultStyle: {
@@ -207,15 +246,15 @@ const generateReportDocDefinition = (reportData) => {
         ],
         margin: [40, 0, 40, 20] // Adjust margin for footer
       };
-    },
-    styles: { // Ensure styles object is only defined once at the top level
-        ...this.styles, // Keep existing styles
-        footerText: {
-            fontSize: 8,
-            color: '#AAAAAA',
-            italics: true
-        }
     }
+    // styles: { // This was causing a redefinition, consolidated into the main styles object above
+    //     ...this.styles, 
+    //     footerText: {
+    //         fontSize: 8,
+    //         color: '#AAAAAA',
+    //         italics: true
+    //     }
+    // }
   };
 };
 
