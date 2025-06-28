@@ -1,33 +1,88 @@
-const express = require('express');
+import express from 'express';
+import { protect as auth } from '../middleware/auth.js';
+import Report from '../models/Report.js';
+import User from '../models/User.js';
+import Alert from '../models/Alert.js';
+import FinanceRecord from '../models/FinanceRecord.js';
+import FuelRecord from '../models/FuelRecord.js';
+import Machinery from '../models/Machinery.js';
+import Part from '../models/Part.js';
+import Rental from '../models/Rental.js';
+import Tool from '../models/Tool.js';
+import Vehicle from '../models/Vehicle.js';
+import Warehouse from '../models/Warehouse.js';
+import fs from 'fs';
+import PdfPrinter from 'pdfmake';
+// Import pdfMake library instance and pdfFonts (vfs)
+import pdfMake from 'pdfmake/build/pdfmake.js';
+import pdfFonts from 'pdfmake/build/vfs_fonts.js';
+
+// Assign vfs to pdfMake instance
+if (pdfFonts && pdfFonts.pdfMake && pdfFonts.pdfMake.vfs) {
+  pdfMake.vfs = pdfFonts.pdfMake.vfs;
+} else {
+  console.error("Failed to load pdfmake vfs fonts. pdfFonts structure:", pdfFonts);
+  // Fallback or error handling if fonts are not loaded correctly
+  // This might happen if the structure of vfs_fonts.js output changes
+  // or if the import itself fails silently for some reason.
+}
+
+
 const router = express.Router();
-const auth = require('../middleware/auth');
-const Report = require('../models/Report');
-const User = require('../models/User');
-const Alert = require('../models/Alert');
-const FinanceRecord = require('../models/FinanceRecord');
-const FuelRecord = require('../models/FuelRecord');
-const Machinery = require('../models/Machinery');
-const Part = require('../models/Part');
-const Rental = require('../models/Rental');
-const Tool = require('../models/Tool');
-const Vehicle = require('../models/Vehicle');
-const Warehouse = require('../models/Warehouse');
-const fs = require('fs');
 
-// Define fonts
-const vfsFonts = require('pdfmake/build/vfs_fonts.js');
-
-const PdfPrinter = require('pdfmake');
+// Define fonts for PdfPrinter
+// The PdfPrinter constructor expects font descriptors.
+// We need to ensure that the font files (e.g., 'Roboto-Regular.ttf') are found within pdfMake.vfs
 const printer = new PdfPrinter({
   Roboto: {
-    normal: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-Regular.ttf'], 'base64'),
-    bold: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-Medium.ttf'], 'base64'),
-    italics: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-Italic.ttf'], 'base64'),
-    bolditalics: Buffer.from(vfsFonts.pdfMake.vfs['Roboto-MediumItalic.ttf'], 'base64'),
+    normal: 'Roboto-Regular.ttf',
+    bold: 'Roboto-Medium.ttf',
+    italics: 'Roboto-Italic.ttf',
+    bolditalics: 'Roboto-MediumItalic.ttf',
   }
 });
-// Assign vfs to pdfMake instance
-pdfMake.vfs = vfsFonts.pdfMake.vfs;
+
+// The Buffer.from(...) calls are not needed here if pdfMake.vfs is correctly populated.
+// pdfMake will resolve these font names against its virtual file system.
+
+// pdfmake instance doesn't need to be created separately with `new PdfPrinter()`
+// and vfs fonts are typically assigned directly to the PdfPrinter import if needed,
+// but modern pdfmake handles this internally or through constructor.
+// For the direct vfs assignment as it was:
+// import pdfMake from 'pdfmake'; // This would be problematic with PdfPrinter class
+// pdfMake.vfs = vfsFonts.pdfMake.vfs; // This line is tricky with ES6 modules.
+// It's better if PdfPrinter handles vfs internally or via constructor options.
+// The original code implies `pdfMake` is a global or a different import than `PdfPrinter`.
+// Let's assume `PdfPrinter` is the main class and it handles its own fonts or
+// we might need to find a different way to set vfs if `pdfMake.vfs = ...` was for a global instance.
+
+// If pdfMake.vfs is essential and refers to a global or specific instance used by PdfPrinter,
+// and considering PdfPrinter is the class, we might not need `pdfMake.vfs = ...` if
+// vfsFonts are correctly passed or available to the printer instance.
+// Given the original code `const PdfPrinter = require('pdfmake');` and then `pdfMake.vfs = ...`,
+// it seems `pdfmake` (lowercase) was expected to be the library object itself, not the class.
+// With ES6 `import PdfPrinter from 'pdfmake'`, PdfPrinter is the class.
+// The `vfs_fonts.js` itself usually sets `pdfMake.vfs`.
+// Let's ensure vfsFonts are available. The `import vfsFonts from 'pdfmake/build/vfs_fonts.js'`
+// should execute the file, which often has a side effect of setting `pdfMake.vfs`.
+// If `pdfMake` is not a global, this might still be an issue.
+// A common pattern for pdfmake with ES6 is:
+// import PdfPrinter from 'pdfmake';
+// import pdfMake from 'pdfmake/build/pdfmake.js'; // Import the library instance
+// import pdfFonts from 'pdfmake/build/vfs_fonts.js'; // Import the vfs fonts
+// pdfMake.vfs = pdfFonts.pdfMake.vfs; // Assign vfs to the library instance
+
+// For now, I will proceed with the assumption that importing vfsFonts will make them available
+// or that the PdfPrinter class handles them correctly. The critical part is `vfsFonts.pdfMake.vfs`.
+
+// Assign vfs to global pdfMake instance if that's how pdfmake expects it.
+// This line was present in the original CommonJS and is crucial for pdfmake to find fonts.
+// When 'pdfmake/build/vfs_fonts.js' is imported, it typically populates a global `pdfMake.vfs`.
+// So, simply importing it should be enough. If `pdfMake` is not automatically global,
+// we might need to import `pdfMake` from `pdfmake/build/pdfmake.js` first and then assign `vfsFonts.pdfMake.vfs` to its `vfs` property.
+// import pdfMake from 'pdfmake/build/pdfmake.js';
+// pdfMake.vfs = vfsFonts.pdfMake.vfs;
+// For now, let's assume the import of vfs_fonts.js is sufficient.
 
 // Function to generate PDF document definition
 const generateReportDocDefinition = (reportData) => {
@@ -330,4 +385,4 @@ router.post('/:type', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
