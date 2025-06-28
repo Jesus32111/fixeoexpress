@@ -9,7 +9,7 @@ import {
   Home,
   BarChart3,
   Users,
-  FileText,
+  // FileText, // Commenting out as it's used for Contracts, but also for Reports icon
   Calendar,
   Building2,
   Car,
@@ -30,6 +30,7 @@ import PartsModule from './PartsModule';
 import AlertsModule from './AlertsModule';
 import FinanceModule from './FinanceModule';
 import RentalsModule from './RentalsModule';
+import ReportsModule from './ReportsModule'; // Import ReportsModule
 
 const MainDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -115,9 +116,9 @@ const MainDashboard: React.FC = () => {
     { id: 'parts', name: 'Repuestos', icon: Package },
     { id: 'alerts', name: 'Alertas', icon: AlertTriangle },
     { id: 'finance', name: 'Finanzas', icon: Wallet },
-    { id: 'reports', name: 'Reportes', icon: BarChart3 },
+    { id: 'reports', name: 'Reportes', icon: FileText }, // Changed icon to FileText
     { id: 'clients', name: 'Clientes', icon: Users },
-    { id: 'contracts', name: 'Contratos', icon: FileText },
+    { id: 'contracts', name: 'Contratos', icon: BarChart3 }, // Changed icon to BarChart3 for Contracts
     { id: 'calendar', name: 'Calendario', icon: Calendar },
   ];
 
@@ -142,15 +143,7 @@ const MainDashboard: React.FC = () => {
       case 'rentals':
         return <RentalsModule />;
       case 'reports':
-        return (
-          <div className="p-8">
-            <div className="text-center">
-              <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Módulo de Reportes</h3>
-              <p className="text-gray-600">Próximamente disponible</p>
-            </div>
-          </div>
-        );
+        return <ReportsModule />; // Render ReportsModule
       case 'clients':
         return (
           <div className="p-8">
@@ -184,7 +177,7 @@ const MainDashboard: React.FC = () => {
       case 'home':
       default:
         const quickAccessItems = menuItems.filter(item => 
-          ['machinery', 'vehicles', 'rentals', 'alerts', 'finance'].includes(item.id) // Removed 'reports'
+          ['machinery', 'vehicles', 'rentals', 'alerts', 'finance', 'reports'].includes(item.id) // Added 'reports'
         );
         
         return (
@@ -301,35 +294,24 @@ const MainDashboard: React.FC = () => {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 {quickAccessItems.map((item) => {
                   const Icon = item.icon;
-                  // Updated isAvailable to exclude 'reports' and ensure 'alerts' is handled correctly
-                  const isAvailable = ['machinery', 'warehouses', 'vehicles','fuel','tools','parts','alerts','finance','rentals'].includes(item.id);
+                  const isAvailable = ['machinery', 'warehouses', 'vehicles','fuel','tools','parts','alerts','finance','rentals', 'reports'].includes(item.id);
                   
-                  // Special handling for the 'reports' item if it was part of quickAccessItems, 
-                  // it should now point to 'alerts'
-                  let currentItem = item;
-                  if (item.id === 'reports') {
-                    const alertsItem = menuItems.find(mi => mi.id === 'alerts');
-                    if (alertsItem) {
-                      currentItem = alertsItem;
-                    }
-                  }
-
                   return (
                     <button
-                      key={currentItem.id}
-                      onClick={() => setActiveModule(currentItem.id)} // Use currentItem.id
+                      key={item.id}
+                      onClick={() => setActiveModule(item.id)}
                       disabled={!isAvailable}
                       className={`flex flex-col items-center justify-center p-4 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow ${
                         !isAvailable ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
                       }`}
                     >
-                      <Icon className={`h-10 w-10 mb-2 ${ // Icon remains from original item
-                        activeModule === currentItem.id ? 'text-blue-600' : isAvailable ? 'text-blue-500' : 'text-gray-400'
+                      <Icon className={`h-10 w-10 mb-2 ${
+                        activeModule === item.id ? 'text-blue-600' : isAvailable ? 'text-blue-500' : 'text-gray-400'
                       }`} />
                       <span className={`text-sm font-medium ${
-                        activeModule === currentItem.id ? 'text-blue-700' : 'text-gray-700'
-                      }`}>{currentItem.name}</span> {/* Use currentItem.name */}
-                      {!isAvailable && currentItem.id !== 'home' && ( // Use currentItem.id
+                        activeModule === item.id ? 'text-blue-700' : 'text-gray-700'
+                      }`}>{item.name}</span>
+                      {!isAvailable && item.id !== 'home' && (
                         <span className="mt-1 text-xs bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full">
                           Pronto
                         </span>
@@ -366,7 +348,7 @@ const MainDashboard: React.FC = () => {
         <nav className="mt-6 px-3">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isAvailable = item.id === 'home' || ['machinery', 'warehouses', 'vehicles','fuel','tools','parts','alerts','finance','rentals'].includes(item.id);
+            const isAvailable = item.id === 'home' || ['machinery', 'warehouses', 'vehicles','fuel','tools','parts','alerts','finance','rentals', 'reports'].includes(item.id);
             
             return (
               <button

@@ -6,6 +6,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import MainDashboard from './components/MainDashboard';
 import LoadingSpinner from './components/LoadingSpinner';
+import ReportsModule from './components/ReportsModule';
 
 const AppRoutes: React.FC = () => {
   const { user, loading } = useAuth();
@@ -32,6 +33,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <MainDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reports"
+        element={
+          <ProtectedRoute>
+            <ReportsModule />
           </ProtectedRoute>
         }
       />
