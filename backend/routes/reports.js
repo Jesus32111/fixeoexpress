@@ -12,8 +12,6 @@ const Rental = require('../models/Rental');
 const Tool = require('../models/Tool');
 const Vehicle = require('../models/Vehicle');
 const Warehouse = require('../models/Warehouse');
-
-const PdfPrinter = require('pdfmake');
 const fs = require('fs');
 
 // Define fonts
