@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from '../api/axios';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Download, FileText, AlertTriangle, BarChart2, DollarSign, Droplet, Truck, Wrench, Archive, Users, Home } from 'lucide-react';
 
@@ -21,8 +21,10 @@ const ReportsModule: React.FC = () => {
       });
 
       // Check if the response is a PDF or an error
-      if (response.data.type === 'application/pdf') {
-        const blob = new Blob([response.data], { type: 'application/pdf' });
+      // When responseType is 'blob', response.data is already a Blob.
+      // We should check its type. The server should set Content-Type to 'application/pdf'.
+      if (response.data instanceof Blob && response.data.type === 'application/pdf') {
+        const blob: Blob = response.data; // response.data is already the Blob
         const link = document.createElement('a');
         link.href = window.URL.createObjectURL(blob);
         link.download = `${reportType}_report_${Date.now()}.pdf`;

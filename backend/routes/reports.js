@@ -15,30 +15,36 @@ import fs from 'fs';
 import PdfPrinter from 'pdfmake';
 // Import pdfMake library instance and pdfFonts (vfs)
 import pdfMake from 'pdfmake/build/pdfmake.js';
-import pdfFonts from 'pdfmake/build/vfs_fonts.js';
+// pdfFonts import is not strictly necessary if we are not using its VFS directly here,
+// but it's good practice to keep it if other parts of pdfMake rely on its side effects.
+// For this specific solution, we are bypassing VFS for Roboto.
+// import pdfFonts from 'pdfmake/build/vfs_fonts.js'; 
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Assign vfs to pdfMake instance
-if (pdfFonts && pdfFonts.pdfMake && pdfFonts.pdfMake.vfs) {
-  pdfMake.vfs = pdfFonts.pdfMake.vfs;
-} else {
-  console.error("Failed to load pdfmake vfs fonts. pdfFonts structure:", pdfFonts);
-  // Fallback or error handling if fonts are not loaded correctly
-  // This might happen if the structure of vfs_fonts.js output changes
-  // or if the import itself fails silently for some reason.
-}
+// Determine __dirname for ES module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+
+// pdfMake.vfs assignment can be removed if not using VFS for other fonts,
+// or kept if other fonts might still rely on it.
+// For Roboto, we are now using explicit paths.
+// if (pdfFonts && pdfFonts.pdfMake && pdfFonts.pdfMake.vfs) {
+//   pdfMake.vfs = pdfFonts.pdfMake.vfs;
+// } else {
+//   console.error("Failed to load pdfmake vfs fonts. pdfFonts structure:", pdfFonts);
+// }
 
 const router = express.Router();
 
-// Define fonts for PdfPrinter
-// The PdfPrinter constructor expects font descriptors.
-// We need to ensure that the font files (e.g., 'Roboto-Regular.ttf') are found within pdfMake.vfs
+// Define fonts for PdfPrinter using local files
 const printer = new PdfPrinter({
   Roboto: {
-    normal: 'Roboto-Regular.ttf',
-    bold: 'Roboto-Medium.ttf',
-    italics: 'Roboto-Italic.ttf',
-    bolditalics: 'Roboto-MediumItalic.ttf',
+    normal: path.join(__dirname, 'fonts/Roboto-Regular.ttf'),
+    bold: path.join(__dirname, 'fonts/Roboto-Medium.ttf'),
+    italics: path.join(__dirname, 'fonts/Roboto-Italic.ttf'),
+    bolditalics: path.join(__dirname, 'fonts/Roboto-MediumItalic.ttf')
   }
 });
 
@@ -126,15 +132,15 @@ const generateReportDocDefinition = (reportData) => {
 
     // Normalizar y filtrar las claves, priorizando un conjunto predefinido si existe
     const predefinedKeyOrders = {
-      vehicles: ['plate', 'brand', 'model', 'year', 'status', 'assignedTo', 'lastMaintenanceDate', 'nextMaintenanceDate', 'fuelType', 'mileage'],
-      machinery: ['name', 'type', 'manufacturer', 'model', 'purchaseDate', 'status', 'location', 'hourlyRate', 'lastMaintenanceDate'],
-      tools: ['name', 'type', 'quantity', 'location', 'purchaseDate', 'status'],
-      parts: ['name', 'partNumber', 'quantity', 'supplier', 'price', 'location'],
-      fuel: ['vehicleId', 'date', 'liters', 'cost', 'mileageBefore', 'mileageAfter'],
-      finance: ['type', 'category', 'description', 'amount', 'date', 'relatedTo'],
-      alerts: ['type', 'message', 'severity', 'status', 'relatedTo', 'dueDate'],
-      rentals: ['customerName', 'itemType', 'itemId', 'startDate', 'endDate', 'totalAmount', 'status'],
-      warehouses: ['name', 'location', 'capacity', 'manager'],
+      vehicles: ['placa', 'marca', 'modelo', 'año', 'estado', 'asignado a', 'fecha del último mantenimiento', 'fecha del próximo mantenimiento', 'tipo de combustible', 'kilometraje'],
+      machinery: ['nombre', 'tipo', 'fabricante', 'modelo', 'fecha de compra', 'estado', 'ubicación', 'tarifa por hora', 'fecha del último mantenimiento'],
+      tools: ['nombre', 'tipo', 'cantidad', 'ubicación', 'fecha de compra', 'estado'],
+      parts: ['nombre', 'número de parte', 'cantidad', 'proveedor', 'precio', 'ubicación'],
+      fuel: ['ID del vehículo', 'fecha', 'litros', 'costo', 'kilometraje antes', 'kilometraje después'],
+      finance: ['tipo', 'categoría', 'descripción', 'monto', 'fecha', 'relacionado con'],
+      alerts: ['tipo', 'mensaje', 'severidad', 'estado', 'relacionado con', 'fecha de vencimiento'],
+      rentals: ['nombre del cliente', 'tipo de ítem', 'ID del ítem', 'fecha de inicio', 'fecha de fin', 'monto total', 'estado'],
+      warehouses: ['nombre', 'ubicación', 'capacidad', 'encargado']
       // Añadir más según sea necesario
     };
 
