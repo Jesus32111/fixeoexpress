@@ -47,12 +47,48 @@ const models = {
 const buildTable = (items) => {
   if (!items || items.length === 0) return [['Sin datos']];
 
-  const headers = Object.keys(items[0]).filter(k => !['_id', '__v'].includes(k));
+  const headerTranslations = {
+    name: 'Nombre',
+    type: 'Tipo',
+    description: 'Descripción',
+    status: 'Estado',
+    model: 'Modelo',
+    serialNumber: 'Número de Serie',
+    acquisitionDate: 'Fecha de Adquisición',
+    maintenanceDate: 'Fecha de Mantenimiento',
+    location: 'Ubicación',
+    brand: 'Marca',
+    quantity: 'Cantidad',
+    unit: 'Unidad',
+    purchaseDate: 'Fecha de Compra',
+    provider: 'Proveedor',
+    price: 'Precio',
+    amount: 'Monto',
+    date: 'Fecha',
+    category: 'Categoría',
+    plate: 'Placa',
+    year: 'Año',
+    fuelType: 'Tipo de Combustible',
+    capacity: 'Capacidad',
+    consumption: 'Consumo',
+    startDate: 'Fecha de Inicio',
+    endDate: 'Fecha de Fin',
+    client: 'Cliente',
+    details: 'Detalles',
+    // Añadir más traducciones según sea necesario
+  };
+
+  const originalHeaders = Object.keys(items[0]).filter(k => !['_id', '__v'].includes(k));
+  const translatedHeaders = originalHeaders.map(h => headerTranslations[h] || h);
+
   const rows = items.map(item =>
-    headers.map(h => String(item[h] ?? ''))
+    originalHeaders.map(h => String(item[h] ?? ''))
   );
 
-  return [headers, ...rows];
+  // Para el PDF, formateamos los encabezados para que tengan un fondo
+  const pdfHeaders = translatedHeaders.map(header => ({ text: header, style: 'tableHeader' }));
+
+  return [pdfHeaders, ...rows];
 };
 
 router.post('/:type', auth, async (req, res) => {
@@ -104,13 +140,29 @@ router.post('/:type', auth, async (req, res) => {
         content,
         defaultStyle: {
           font: 'Roboto',
-          fontSize: 9
+          fontSize: 8 // Reducido de 9 a 8
         },
         styles: {
-          header: { fontSize: 16, bold: true, margin: [0, 0, 0, 10] },
-          subheader: { fontSize: 12, bold: true, margin: [0, 10, 0, 5] }
+          header: { fontSize: 14, bold: true, margin: [0, 0, 0, 10], color: '#2c3e50' }, // Tamaño reducido y color corporativo
+          subheader: { fontSize: 10, bold: true, margin: [0, 10, 0, 5], color: '#34495e' }, // Tamaño reducido y color corporativo
+          tableHeader: { bold: true, fontSize: 9, color: 'white', fillColor: '#34495e', margin: [0, 5, 0, 5] }, // Estilo para encabezados de tabla
+          notes: { fontSize: 7, italics: true, margin: [0, 10, 0, 0]} // Estilo para notas al pie o información adicional
         },
-        pageOrientation: 'landscape'
+        pageOrientation: 'landscape',
+        footer: function(currentPage, pageCount) {
+          return { text: `Página ${currentPage.toString()} de ${pageCount}`, alignment: 'center', style: 'notes' };
+        },
+        header: function(currentPage, pageCount, pageSize) {
+          // Podría añadir un logo aquí si estuviera disponible
+          return {
+            text: 'Reporte Corporativo', // Placeholder para un título o logo
+            alignment: 'center',
+            margin: [0, 10, 0, 10],
+            fontSize: 10,
+            bold: true,
+            color: '#2c3e50'
+          };
+        }
       };
 
       const pdfDoc = printer.createPdfKitDocument(docDefinition);
@@ -122,13 +174,45 @@ router.post('/:type', auth, async (req, res) => {
     } else if (format === 'csv') {
       let csvData = [];
 
+      const headerTranslations = { // Asegurarse de que las traducciones estén disponibles aquí también
+        name: 'Nombre',
+        type: 'Tipo',
+        description: 'Descripción',
+        status: 'Estado',
+        model: 'Modelo',
+        serialNumber: 'Número de Serie',
+        acquisitionDate: 'Fecha de Adquisición',
+        maintenanceDate: 'Fecha de Mantenimiento',
+        location: 'Ubicación',
+        brand: 'Marca',
+        quantity: 'Cantidad',
+        unit: 'Unidad',
+        purchaseDate: 'Fecha de Compra',
+        provider: 'Proveedor',
+        price: 'Precio',
+        amount: 'Monto',
+        date: 'Fecha',
+        category: 'Categoría',
+        plate: 'Placa',
+        year: 'Año',
+        fuelType: 'Tipo de Combustible',
+        capacity: 'Capacidad',
+        consumption: 'Consumo',
+        startDate: 'Fecha de Inicio',
+        endDate: 'Fecha de Fin',
+        client: 'Cliente',
+        details: 'Detalles',
+      };
+
       const appendData = (items, moduleName) => {
         if (!Array.isArray(items) || items.length === 0) return;
-        const keys = Object.keys(items[0]).filter(k => k !== '_id' && k !== '__v');
+        const originalKeys = Object.keys(items[0]).filter(k => k !== '_id' && k !== '__v');
+        const translatedKeys = originalKeys.map(k => headerTranslations[k] || k);
+        
         csvData.push([`${moduleName.toUpperCase()}`]);
-        csvData.push(keys);
+        csvData.push(translatedKeys); // Usar encabezados traducidos
         items.forEach(item => {
-          csvData.push(keys.map(k => item[k] ?? ''));
+          csvData.push(originalKeys.map(k => item[k] ?? '')); // Los datos siguen usando las claves originales
         });
         csvData.push([]);
       };
