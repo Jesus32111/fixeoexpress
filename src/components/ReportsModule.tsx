@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { Download, FileText, AlertTriangle, BarChart2, DollarSign, Droplet, Truck, Wrench, Archive, Users, Home } from 'lucide-react';
+import { Download, FileText, AlertTriangle, BarChart2, DollarSign, Droplet, Truck, Wrench, Archive, Users, Home, FileDown } from 'lucide-react';
 
 const ReportsModule: React.FC = () => {
   const { token } = useAuth();
@@ -9,73 +9,36 @@ const ReportsModule: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (format: 'pdf' | 'csv') => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await axios.post(`/reports/${reportType}`, {}, {
+      const response = await axios.post(`/reports/${reportType}`, { format }, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-        responseType: 'blob', // Important for file download
+        responseType: 'blob',
       });
 
-      // Check if the response is a PDF or an error
-      // When responseType is 'blob', response.data is already a Blob.
-      // We should check its type. The server should set Content-Type to 'application/pdf'.
-      if (response.data instanceof Blob && response.data.type === 'application/pdf') {
-        const blob: Blob = response.data; // response.data is already the Blob
+      const blob: Blob = response.data;
+      const fileExtension = format === 'pdf' ? 'pdf' : 'csv';
+      const fileName = `${reportType}_report_${Date.now()}.${fileExtension}`;
+
+      if (blob instanceof Blob) {
         const link = document.createElement('a');
         link.href = window.URL.createObjectURL(blob);
-        link.download = `${reportType}_report_${Date.now()}.pdf`;
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(link.href);
       } else {
-        // Try to parse the error message if it's not a PDF
-        const errorData = await response.data.text(); // Read blob as text
-        try {
-            const errorJson = JSON.parse(errorData); // Try to parse as JSON
-            setError(errorJson.msg || errorJson.message || 'Error al generar el reporte.');
-        } catch (e) {
-            setError(errorData || 'Error al generar el reporte.'); // Fallback to text if not JSON
-        }
+        setError('Respuesta inesperada del servidor.');
       }
 
     } catch (err: any) {
       console.error('Error generating report:', err);
-      if (err.response && err.response.data) {
-        // If response.data is a Blob, it means the server likely tried to send a PDF
-        // but an error occurred, or it's an actual error response as Blob.
-        if (err.response.data instanceof Blob) {
-          try {
-            const errorText = await err.response.data.text();
-            // Attempt to parse as JSON, as some errors might be structured.
-            try {
-              const errorJson = JSON.parse(errorText);
-              setError(errorJson.msg || errorJson.message || 'Error del servidor (blob).');
-            } catch (e) {
-              // If not JSON, use the raw text.
-              setError(errorText || 'Error del servidor (blob).');
-            }
-          } catch (blobError) {
-            setError('Error al leer el mensaje de error del servidor.');
-          }
-        } else if (typeof err.response.data === 'string') {
-          setError(err.response.data);
-        } else if (err.response.data.msg) {
-          setError(err.response.data.msg);
-        } else if (err.response.data.message) {
-          setError(err.response.data.message);
-        } else {
-          setError('Ocurrió un error al generar el reporte.');
-        }
-      } else if (err.message) {
-        setError(err.message);
-      } else {
-        setError('Ocurrió un error desconocido al generar el reporte.');
-      }
+      setError('Error al generar el reporte.');
     } finally {
       setIsLoading(false);
     }
@@ -128,9 +91,9 @@ const ReportsModule: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-4">
         <button
-          onClick={handleGenerateReport}
+          onClick={() => handleGenerateReport('pdf')}
           disabled={isLoading}
           className={`flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white 
                       ${isLoading ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}
@@ -142,7 +105,7 @@ const ReportsModule: React.FC = () => {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              Generando...
+              Generando PDF...
             </>
           ) : (
             <>
@@ -151,12 +114,24 @@ const ReportsModule: React.FC = () => {
             </>
           )}
         </button>
+
+        <button
+          onClick={() => handleGenerateReport('csv')}
+          disabled={isLoading}
+          className={`flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md shadow-sm text-gray-800 
+                      ${isLoading ? 'bg-gray-200 cursor-not-allowed' : 'bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400'}
+                      transition ease-in-out duration-150`}
+        >
+          <FileDown className="w-5 h-5 mr-2" />
+          Descargar CSV
+        </button>
       </div>
-       <div className="mt-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+
+      <div className="mt-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
         <h3 className="text-lg font-semibold text-gray-700 mb-2">Información del Reporte</h3>
         <p className="text-sm text-gray-600">
           El reporte seleccionado (<span className="font-medium">{moduleOptions.find(opt => opt.value === reportType)?.label}</span>)
-          contendrá un resumen de los datos relevantes del módulo. El formato del archivo será PDF.
+          contendrá un resumen de los datos relevantes del módulo. Puedes elegir entre formato PDF o CSV.
         </p>
         {reportType === 'general' && (
           <p className="text-sm text-gray-600 mt-2">
